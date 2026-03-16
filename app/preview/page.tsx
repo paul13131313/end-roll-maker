@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { EndRollData, CastSection } from "@/lib/types";
+import { EndRollData } from "@/lib/types";
 import { loadData } from "@/lib/storage";
 
 type Sequence =
@@ -37,14 +37,12 @@ function buildSequence(data: EndRollData): Sequence[] {
 
   if (data.profile.motto) seq.push({ type: "motto", text: data.profile.motto });
 
-  // Photos
   if (data.settings.showPhotos && data.profile.photos.length > 0) {
     data.profile.photos.forEach((src) => {
       seq.push({ type: "photo", src });
     });
   }
 
-  // Cast sections (except lead)
   const nonLead = data.cast.filter((s) => s.id !== "lead" && s.members.length > 0);
   nonLead.forEach((section) => {
     seq.push({ type: "section-title", text: section.label });
@@ -53,7 +51,6 @@ function buildSequence(data: EndRollData): Sequence[] {
     });
   });
 
-  // Lead
   const lead = data.cast.find((s) => s.id === "lead");
   if (lead && lead.members.length > 0) {
     seq.push({ type: "lead-label" });
@@ -75,9 +72,269 @@ function buildSequence(data: EndRollData): Sequence[] {
   return seq;
 }
 
+interface RenderItem {
+  y: number;
+  height: number;
+  render: (ctx: CanvasRenderingContext2D) => void;
+}
+
+function buildRenderItems(
+  sequence: Sequence[],
+  W: number,
+  H: number,
+  scale: number,
+  loadedImages: Map<string, HTMLImageElement>
+): { items: RenderItem[]; totalHeight: number } {
+  const items: RenderItem[] = [];
+  let y = H;
+
+  for (const item of sequence) {
+    switch (item.type) {
+      case "fade-in": {
+        const h = H * 0.5;
+        const startY = y;
+        items.push({ y: startY, height: h, render: () => {} });
+        y += h;
+        break;
+      }
+      case "title": {
+        const h = H * 0.6;
+        const startY = y;
+        const text = item.text;
+        items.push({
+          y: startY,
+          height: h,
+          render: (ctx) => {
+            ctx.save();
+            ctx.font = `${32 * scale}px 'Noto Serif JP', serif`;
+            ctx.fillStyle = "#ddd8c8";
+            ctx.textAlign = "center";
+            ctx.fillText(text, W / 2, startY + h / 2);
+            ctx.restore();
+          },
+        });
+        y += h;
+        break;
+      }
+      case "info": {
+        const lineH = 36 * scale;
+        const h = lineH * item.lines.length + 80 * scale;
+        const startY = y;
+        const lines = item.lines;
+        items.push({
+          y: startY,
+          height: h,
+          render: (ctx) => {
+            ctx.save();
+            ctx.font = `${16 * scale}px 'Noto Serif JP', serif`;
+            ctx.fillStyle = "#ddd8c8";
+            ctx.textAlign = "center";
+            ctx.globalAlpha = 0.7;
+            lines.forEach((line, i) => {
+              ctx.fillText(line, W / 2, startY + 40 * scale + lineH * (i + 1));
+            });
+            ctx.restore();
+          },
+        });
+        y += h;
+        break;
+      }
+      case "motto": {
+        const h = H * 0.5;
+        const startY = y;
+        const text = item.text;
+        items.push({
+          y: startY,
+          height: h,
+          render: (ctx) => {
+            ctx.save();
+            ctx.font = `italic ${20 * scale}px 'Noto Serif JP', serif`;
+            ctx.fillStyle = "#ddd8c8";
+            ctx.textAlign = "center";
+            ctx.globalAlpha = 0.8;
+            ctx.fillText(`"${text}"`, W / 2, startY + h / 2);
+            ctx.restore();
+          },
+        });
+        y += h;
+        break;
+      }
+      case "photo": {
+        const h = H * 0.7;
+        const startY = y;
+        const src = item.src;
+        items.push({
+          y: startY,
+          height: h,
+          render: (ctx) => {
+            const img = loadedImages.get(src);
+            if (!img) return;
+            ctx.save();
+            const maxW = W * 0.6;
+            const maxH = h * 0.8;
+            let dw = img.naturalWidth;
+            let dh = img.naturalHeight;
+            const ratio = Math.min(maxW / dw, maxH / dh);
+            dw *= ratio;
+            dh *= ratio;
+            ctx.drawImage(img, (W - dw) / 2, startY + (h - dh) / 2, dw, dh);
+            ctx.restore();
+          },
+        });
+        y += h;
+        break;
+      }
+      case "section-title": {
+        const h = 120 * scale;
+        const startY = y;
+        const text = item.text;
+        items.push({
+          y: startY,
+          height: h,
+          render: (ctx) => {
+            ctx.save();
+            ctx.font = `${22 * scale}px 'Noto Serif JP', serif`;
+            ctx.fillStyle = "#ddd8c8";
+            ctx.textAlign = "center";
+            ctx.fillText(text, W / 2, startY + h * 0.65);
+            const tw = ctx.measureText(text).width;
+            ctx.strokeStyle = "#ddd8c8";
+            ctx.globalAlpha = 0.3;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(W / 2 - tw / 2, startY + h * 0.65 + 10 * scale);
+            ctx.lineTo(W / 2 + tw / 2, startY + h * 0.65 + 10 * scale);
+            ctx.stroke();
+            ctx.restore();
+          },
+        });
+        y += h;
+        break;
+      }
+      case "credit": {
+        const h = item.message ? 80 * scale : 56 * scale;
+        const startY = y;
+        const name = item.name;
+        const relation = item.relation;
+        const message = item.message;
+        items.push({
+          y: startY,
+          height: h,
+          render: (ctx) => {
+            ctx.save();
+            ctx.font = `${14 * scale}px 'Noto Serif JP', serif`;
+            ctx.fillStyle = "#ddd8c8";
+            ctx.globalAlpha = 0.5;
+            ctx.textAlign = "left";
+            ctx.fillText(relation, W * 0.2, startY + 30 * scale);
+            ctx.font = `${18 * scale}px 'Noto Serif JP', serif`;
+            ctx.globalAlpha = 1;
+            ctx.textAlign = "right";
+            ctx.fillText(name, W * 0.8, startY + 30 * scale);
+            if (message) {
+              ctx.font = `italic ${12 * scale}px 'Noto Serif JP', serif`;
+              ctx.globalAlpha = 0.4;
+              ctx.textAlign = "center";
+              ctx.fillText(message, W / 2, startY + 56 * scale);
+            }
+            ctx.restore();
+          },
+        });
+        y += h;
+        break;
+      }
+      case "lead-label": {
+        const h = 160 * scale;
+        const startY = y;
+        items.push({
+          y: startY,
+          height: h,
+          render: (ctx) => {
+            ctx.save();
+            ctx.font = `${18 * scale}px 'Noto Serif JP', serif`;
+            ctx.fillStyle = "#ddd8c8";
+            ctx.textAlign = "center";
+            ctx.globalAlpha = 0.7;
+            ctx.fillText("主 演", W / 2, startY + h * 0.65);
+            ctx.restore();
+          },
+        });
+        y += h;
+        break;
+      }
+      case "lead-name": {
+        const h = 200 * scale;
+        const startY = y;
+        const text = item.text;
+        items.push({
+          y: startY,
+          height: h,
+          render: (ctx) => {
+            ctx.save();
+            ctx.font = `bold ${42 * scale}px 'Noto Serif JP', serif`;
+            ctx.fillStyle = "#ddd8c8";
+            ctx.textAlign = "center";
+            ctx.fillText(text, W / 2, startY + h / 2);
+            ctx.restore();
+          },
+        });
+        y += h;
+        break;
+      }
+      case "gratitude": {
+        const lines = item.text.split("\n");
+        const lineH = 32 * scale;
+        const h = lineH * lines.length + 200 * scale;
+        const startY = y;
+        items.push({
+          y: startY,
+          height: h,
+          render: (ctx) => {
+            ctx.save();
+            ctx.font = `${16 * scale}px 'Noto Serif JP', serif`;
+            ctx.fillStyle = "#ddd8c8";
+            ctx.textAlign = "center";
+            ctx.globalAlpha = 0.8;
+            lines.forEach((line, i) => {
+              ctx.fillText(line, W / 2, startY + 100 * scale + lineH * i);
+            });
+            ctx.restore();
+          },
+        });
+        y += h;
+        break;
+      }
+      case "fin": {
+        const h = H * 0.8;
+        const startY = y;
+        items.push({
+          y: startY,
+          height: h,
+          render: (ctx) => {
+            ctx.save();
+            ctx.font = `italic ${36 * scale}px 'IM Fell English','Playfair Display',serif`;
+            ctx.fillStyle = "#ddd8c8";
+            ctx.textAlign = "center";
+            ctx.fillText("FIN", W / 2, startY + h / 2);
+            ctx.restore();
+          },
+        });
+        y += h;
+        break;
+      }
+      case "fade-out": {
+        const startY = y;
+        items.push({ y: startY, height: H, render: () => {} });
+        y += H;
+        break;
+      }
+    }
+  }
+
+  return { items, totalHeight: y };
+}
+
 const SPEED_MAP = { slow: 0.4, normal: 0.7, fast: 1.2 };
-const TEXT_COLOR = "#ddd8c8";
-const FONT_FAMILY = "'Noto Serif JP', serif";
 
 export default function PreviewPage() {
   const router = useRouter();
@@ -92,7 +349,6 @@ export default function PreviewPage() {
     const d = loadData();
     setData(d);
 
-    // Preload photos
     if (d.settings.showPhotos && d.profile.photos.length > 0) {
       d.profile.photos.forEach((src) => {
         const img = new Image();
@@ -151,261 +407,20 @@ export default function PreviewPage() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
+    // Ensure canvas is sized
+    resizeCanvas();
+
     setPlaying(true);
 
     const sequence = buildSequence(data);
     const speed = SPEED_MAP[data.settings.speed];
     const W = canvas.width;
     const H = canvas.height;
-    const scale = W / 800; // base design at 800px
+    const scale = W / 800;
 
-    // Calculate total scroll content height
-    let totalHeight = H; // start below screen
-
-    interface RenderItem {
-      y: number;
-      render: (ctx: CanvasRenderingContext2D, alpha: number) => void;
-      height: number;
-    }
-
-    const items: RenderItem[] = [];
-    let cursorY = H; // start one screen below
-
-    for (const item of sequence) {
-      switch (item.type) {
-        case "fade-in": {
-          items.push({
-            y: cursorY,
-            height: H * 0.5,
-            render: () => {},
-          });
-          cursorY += H * 0.5;
-          break;
-        }
-        case "title": {
-          const h = H * 0.6;
-          items.push({
-            y: cursorY,
-            height: h,
-            render: (ctx) => {
-              ctx.save();
-              ctx.font = `${32 * scale}px ${FONT_FAMILY}`;
-              ctx.fillStyle = TEXT_COLOR;
-              ctx.textAlign = "center";
-              ctx.fillText(item.text, W / 2, cursorY + h / 2);
-              ctx.restore();
-            },
-          });
-          cursorY += h;
-          break;
-        }
-        case "info": {
-          const lineH = 36 * scale;
-          const h = lineH * item.lines.length + 80 * scale;
-          items.push({
-            y: cursorY,
-            height: h,
-            render: (ctx) => {
-              ctx.save();
-              ctx.font = `${16 * scale}px ${FONT_FAMILY}`;
-              ctx.fillStyle = TEXT_COLOR;
-              ctx.textAlign = "center";
-              ctx.globalAlpha = 0.7;
-              item.lines.forEach((line, i) => {
-                ctx.fillText(line, W / 2, cursorY + 40 * scale + lineH * (i + 1));
-              });
-              ctx.restore();
-            },
-          });
-          cursorY += h;
-          break;
-        }
-        case "motto": {
-          const h = H * 0.5;
-          items.push({
-            y: cursorY,
-            height: h,
-            render: (ctx) => {
-              ctx.save();
-              ctx.font = `italic ${20 * scale}px ${FONT_FAMILY}`;
-              ctx.fillStyle = TEXT_COLOR;
-              ctx.textAlign = "center";
-              ctx.globalAlpha = 0.8;
-              ctx.fillText(`"${item.text}"`, W / 2, cursorY + h / 2);
-              ctx.restore();
-            },
-          });
-          cursorY += h;
-          break;
-        }
-        case "photo": {
-          const h = H * 0.7;
-          const src = item.src;
-          items.push({
-            y: cursorY,
-            height: h,
-            render: (ctx) => {
-              const img = loadedImagesRef.current.get(src);
-              if (!img) return;
-              ctx.save();
-              const maxW = W * 0.6;
-              const maxH = h * 0.8;
-              let dw = img.naturalWidth;
-              let dh = img.naturalHeight;
-              const ratio = Math.min(maxW / dw, maxH / dh);
-              dw *= ratio;
-              dh *= ratio;
-              ctx.drawImage(img, (W - dw) / 2, cursorY + (h - dh) / 2, dw, dh);
-              ctx.restore();
-            },
-          });
-          cursorY += h;
-          break;
-        }
-        case "section-title": {
-          const h = 120 * scale;
-          items.push({
-            y: cursorY,
-            height: h,
-            render: (ctx) => {
-              ctx.save();
-              ctx.font = `${22 * scale}px ${FONT_FAMILY}`;
-              ctx.fillStyle = TEXT_COLOR;
-              ctx.textAlign = "center";
-              ctx.fillText(item.text, W / 2, cursorY + h * 0.65);
-              // underline
-              const tw = ctx.measureText(item.text).width;
-              ctx.strokeStyle = TEXT_COLOR;
-              ctx.globalAlpha = 0.3;
-              ctx.lineWidth = 1;
-              ctx.beginPath();
-              ctx.moveTo(W / 2 - tw / 2, cursorY + h * 0.65 + 10 * scale);
-              ctx.lineTo(W / 2 + tw / 2, cursorY + h * 0.65 + 10 * scale);
-              ctx.stroke();
-              ctx.restore();
-            },
-          });
-          cursorY += h;
-          break;
-        }
-        case "credit": {
-          const h = item.message ? 80 * scale : 56 * scale;
-          items.push({
-            y: cursorY,
-            height: h,
-            render: (ctx) => {
-              ctx.save();
-              // Relation on left
-              ctx.font = `${14 * scale}px ${FONT_FAMILY}`;
-              ctx.fillStyle = TEXT_COLOR;
-              ctx.globalAlpha = 0.5;
-              ctx.textAlign = "left";
-              ctx.fillText(item.relation, W * 0.2, cursorY + 30 * scale);
-              // Name on right
-              ctx.font = `${18 * scale}px ${FONT_FAMILY}`;
-              ctx.globalAlpha = 1;
-              ctx.textAlign = "right";
-              ctx.fillText(item.name, W * 0.8, cursorY + 30 * scale);
-              // Message
-              if (item.message) {
-                ctx.font = `italic ${12 * scale}px ${FONT_FAMILY}`;
-                ctx.globalAlpha = 0.4;
-                ctx.textAlign = "center";
-                ctx.fillText(item.message, W / 2, cursorY + 56 * scale);
-              }
-              ctx.restore();
-            },
-          });
-          cursorY += h;
-          break;
-        }
-        case "lead-label": {
-          const h = 160 * scale;
-          items.push({
-            y: cursorY,
-            height: h,
-            render: (ctx) => {
-              ctx.save();
-              ctx.font = `${18 * scale}px ${FONT_FAMILY}`;
-              ctx.fillStyle = TEXT_COLOR;
-              ctx.textAlign = "center";
-              ctx.globalAlpha = 0.7;
-              ctx.fillText("主 演", W / 2, cursorY + h * 0.65);
-              ctx.restore();
-            },
-          });
-          cursorY += h;
-          break;
-        }
-        case "lead-name": {
-          const h = 200 * scale;
-          items.push({
-            y: cursorY,
-            height: h,
-            render: (ctx) => {
-              ctx.save();
-              ctx.font = `bold ${42 * scale}px ${FONT_FAMILY}`;
-              ctx.fillStyle = TEXT_COLOR;
-              ctx.textAlign = "center";
-              ctx.fillText(item.text, W / 2, cursorY + h / 2);
-              ctx.restore();
-            },
-          });
-          cursorY += h;
-          break;
-        }
-        case "gratitude": {
-          const lines = item.text.split("\n");
-          const lineH = 32 * scale;
-          const h = lineH * lines.length + 200 * scale;
-          items.push({
-            y: cursorY,
-            height: h,
-            render: (ctx) => {
-              ctx.save();
-              ctx.font = `${16 * scale}px ${FONT_FAMILY}`;
-              ctx.fillStyle = TEXT_COLOR;
-              ctx.textAlign = "center";
-              ctx.globalAlpha = 0.8;
-              lines.forEach((line, i) => {
-                ctx.fillText(line, W / 2, cursorY + 100 * scale + lineH * i);
-              });
-              ctx.restore();
-            },
-          });
-          cursorY += h;
-          break;
-        }
-        case "fin": {
-          const h = H * 0.8;
-          items.push({
-            y: cursorY,
-            height: h,
-            render: (ctx) => {
-              ctx.save();
-              ctx.font = `italic ${36 * scale}px 'IM Fell English','Playfair Display',serif`;
-              ctx.fillStyle = TEXT_COLOR;
-              ctx.textAlign = "center";
-              ctx.fillText("FIN", W / 2, cursorY + h / 2);
-              ctx.restore();
-            },
-          });
-          cursorY += h;
-          break;
-        }
-        case "fade-out": {
-          items.push({
-            y: cursorY,
-            height: H,
-            render: () => {},
-          });
-          cursorY += H;
-          break;
-        }
-      }
-    }
-
-    totalHeight = cursorY;
+    const { items, totalHeight } = buildRenderItems(
+      sequence, W, H, scale, loadedImagesRef.current
+    );
 
     let scrollY = 0;
     let lastTime = performance.now();
@@ -420,38 +435,35 @@ export default function PreviewPage() {
       ctx.fillStyle = "#000";
       ctx.fillRect(0, 0, W, H);
 
-      // Fade in at start
+      // Fade in
       if (scrollY < H * 0.3) {
-        const progress = scrollY / (H * 0.3);
-        ctx.globalAlpha = progress;
+        ctx.globalAlpha = scrollY / (H * 0.3);
       } else {
         ctx.globalAlpha = 1;
       }
 
-      // Fade out at end
+      // Fade out near end
       const distFromEnd = totalHeight - H - scrollY;
       if (distFromEnd < H * 0.5 && distFromEnd > 0) {
         ctx.globalAlpha = distFromEnd / (H * 0.5);
       }
 
       // Render visible items
-      for (const item of items) {
-        const screenY = item.y - scrollY;
-        if (screenY + item.height < -100 || screenY > H + 100) continue;
+      for (const ri of items) {
+        const screenY = ri.y - scrollY;
+        if (screenY + ri.height < -100 || screenY > H + 100) continue;
 
         ctx.save();
         ctx.translate(0, -scrollY);
-        item.render(ctx, 1);
+        ri.render(ctx);
         ctx.restore();
       }
 
-      // Reset alpha
       ctx.globalAlpha = 1;
 
       if (scrollY < totalHeight - H) {
         rafRef.current = requestAnimationFrame(render);
       } else {
-        // Final black
         ctx.fillStyle = "#000";
         ctx.fillRect(0, 0, W, H);
         setPlaying(false);
@@ -459,7 +471,7 @@ export default function PreviewPage() {
     };
 
     rafRef.current = requestAnimationFrame(render);
-  }, [data]);
+  }, [data, resizeCanvas]);
 
   const stop = () => {
     cancelAnimationFrame(rafRef.current);
