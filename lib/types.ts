@@ -11,12 +11,21 @@ export interface CastSection {
   members: CastMember[];
 }
 
+export interface TimelineEntry {
+  id: string;
+  year: string;
+  text: string;
+}
+
 export interface ProfileData {
   fullName: string;
   reading: string;
   birthDate: string;
   birthPlace: string;
   motto: string;
+  career: TimelineEntry[];
+  milestones: TimelineEntry[];
+  hobbies: string[];
   favorites: {
     music: string;
     food: string;
@@ -53,6 +62,9 @@ export const DEFAULT_PROFILE: ProfileData = {
   birthDate: "",
   birthPlace: "",
   motto: "",
+  career: [],
+  milestones: [],
+  hobbies: [],
   favorites: { music: "", food: "", place: "" },
   threeWords: ["", "", ""],
   gratitudeMessage: "",

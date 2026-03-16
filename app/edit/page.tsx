@@ -7,6 +7,7 @@ import {
   CastMember,
   ProfileData,
   SettingsData,
+  TimelineEntry,
   DEFAULT_SECTIONS,
   DEFAULT_PROFILE,
   DEFAULT_SETTINGS,
@@ -243,6 +244,149 @@ export default function EditPage() {
                 <input value={profile.motto} onChange={(e) => updateProfile({ motto: e.target.value })} placeholder="人生は一度きり" style={{ width: "100%" }} />
               </div>
 
+              {/* Career */}
+              <div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                  <label style={{ ...labelStyle, marginBottom: 0 }}>経歴</label>
+                  <button
+                    onClick={() => {
+                      const next = { ...profile, career: [...(profile.career || []), { id: uid(), year: "", text: "" }] };
+                      setProfile(next);
+                      persist(cast, next, settings);
+                    }}
+                    style={addBtnStyle}
+                    onMouseEnter={(e) => { (e.target as HTMLElement).style.borderColor = "#666"; (e.target as HTMLElement).style.color = "#aaa"; }}
+                    onMouseLeave={(e) => { (e.target as HTMLElement).style.borderColor = "#333"; (e.target as HTMLElement).style.color = "#666"; }}
+                  >
+                    + ADD
+                  </button>
+                </div>
+                {(profile.career || []).map((entry, idx) => (
+                  <div key={entry.id} style={{ display: "flex", gap: 8, marginBottom: 6, alignItems: "center" }}>
+                    <input
+                      placeholder="年"
+                      value={entry.year}
+                      onChange={(e) => {
+                        const next = { ...profile, career: profile.career.map((c, i) => i === idx ? { ...c, year: e.target.value } : c) };
+                        setProfile(next);
+                        persist(cast, next, settings);
+                      }}
+                      style={{ width: 80, flexShrink: 0 }}
+                    />
+                    <input
+                      placeholder="学歴・職歴など"
+                      value={entry.text}
+                      onChange={(e) => {
+                        const next = { ...profile, career: profile.career.map((c, i) => i === idx ? { ...c, text: e.target.value } : c) };
+                        setProfile(next);
+                        persist(cast, next, settings);
+                      }}
+                      style={{ flex: 1 }}
+                    />
+                    <button
+                      onClick={() => {
+                        const next = { ...profile, career: profile.career.filter((_, i) => i !== idx) };
+                        setProfile(next);
+                        persist(cast, next, settings);
+                      }}
+                      style={{ background: "none", border: "none", color: "#444", cursor: "pointer", fontSize: 16, lineHeight: 1, flexShrink: 0 }}
+                    >×</button>
+                  </div>
+                ))}
+              </div>
+
+              {/* Milestones */}
+              <div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                  <label style={{ ...labelStyle, marginBottom: 0 }}>人生の転機</label>
+                  <button
+                    onClick={() => {
+                      const next = { ...profile, milestones: [...(profile.milestones || []), { id: uid(), year: "", text: "" }] };
+                      setProfile(next);
+                      persist(cast, next, settings);
+                    }}
+                    style={addBtnStyle}
+                    onMouseEnter={(e) => { (e.target as HTMLElement).style.borderColor = "#666"; (e.target as HTMLElement).style.color = "#aaa"; }}
+                    onMouseLeave={(e) => { (e.target as HTMLElement).style.borderColor = "#333"; (e.target as HTMLElement).style.color = "#666"; }}
+                  >
+                    + ADD
+                  </button>
+                </div>
+                {(profile.milestones || []).map((entry, idx) => (
+                  <div key={entry.id} style={{ display: "flex", gap: 8, marginBottom: 6, alignItems: "center" }}>
+                    <input
+                      placeholder="年"
+                      value={entry.year}
+                      onChange={(e) => {
+                        const next = { ...profile, milestones: profile.milestones.map((m, i) => i === idx ? { ...m, year: e.target.value } : m) };
+                        setProfile(next);
+                        persist(cast, next, settings);
+                      }}
+                      style={{ width: 80, flexShrink: 0 }}
+                    />
+                    <input
+                      placeholder="出来事"
+                      value={entry.text}
+                      onChange={(e) => {
+                        const next = { ...profile, milestones: profile.milestones.map((m, i) => i === idx ? { ...m, text: e.target.value } : m) };
+                        setProfile(next);
+                        persist(cast, next, settings);
+                      }}
+                      style={{ flex: 1 }}
+                    />
+                    <button
+                      onClick={() => {
+                        const next = { ...profile, milestones: profile.milestones.filter((_, i) => i !== idx) };
+                        setProfile(next);
+                        persist(cast, next, settings);
+                      }}
+                      style={{ background: "none", border: "none", color: "#444", cursor: "pointer", fontSize: 16, lineHeight: 1, flexShrink: 0 }}
+                    >×</button>
+                  </div>
+                ))}
+              </div>
+
+              {/* Hobbies */}
+              <div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                  <label style={{ ...labelStyle, marginBottom: 0 }}>趣味・特技</label>
+                  <button
+                    onClick={() => {
+                      const next = { ...profile, hobbies: [...(profile.hobbies || []), ""] };
+                      setProfile(next);
+                      persist(cast, next, settings);
+                    }}
+                    style={addBtnStyle}
+                    onMouseEnter={(e) => { (e.target as HTMLElement).style.borderColor = "#666"; (e.target as HTMLElement).style.color = "#aaa"; }}
+                    onMouseLeave={(e) => { (e.target as HTMLElement).style.borderColor = "#333"; (e.target as HTMLElement).style.color = "#666"; }}
+                  >
+                    + ADD
+                  </button>
+                </div>
+                {(profile.hobbies || []).map((hobby, idx) => (
+                  <div key={idx} style={{ display: "flex", gap: 8, marginBottom: 6, alignItems: "center" }}>
+                    <input
+                      placeholder="趣味・特技"
+                      value={hobby}
+                      onChange={(e) => {
+                        const next = { ...profile, hobbies: profile.hobbies.map((h, i) => i === idx ? e.target.value : h) };
+                        setProfile(next);
+                        persist(cast, next, settings);
+                      }}
+                      style={{ flex: 1 }}
+                    />
+                    <button
+                      onClick={() => {
+                        const next = { ...profile, hobbies: profile.hobbies.filter((_, i) => i !== idx) };
+                        setProfile(next);
+                        persist(cast, next, settings);
+                      }}
+                      style={{ background: "none", border: "none", color: "#444", cursor: "pointer", fontSize: 16, lineHeight: 1, flexShrink: 0 }}
+                    >×</button>
+                  </div>
+                ))}
+              </div>
+
               <div>
                 <label style={labelStyle}>好きだったもの</label>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
@@ -383,4 +527,16 @@ const labelStyle: React.CSSProperties = {
   color: "#888",
   marginBottom: 8,
   textTransform: "uppercase",
+};
+
+const addBtnStyle: React.CSSProperties = {
+  fontFamily: "'Courier New',monospace",
+  fontSize: 10,
+  letterSpacing: "0.2em",
+  color: "#666",
+  background: "transparent",
+  border: "1px solid #333",
+  padding: "5px 14px",
+  cursor: "pointer",
+  transition: "all 0.2s",
 };

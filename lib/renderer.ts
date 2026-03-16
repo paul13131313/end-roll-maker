@@ -5,6 +5,8 @@ type Sequence =
   | { type: "title"; text: string }
   | { type: "info"; lines: string[] }
   | { type: "motto"; text: string }
+  | { type: "timeline"; label: string; entries: { year: string; text: string }[] }
+  | { type: "hobbies"; items: string[] }
   | { type: "favorites"; items: { label: string; value: string }[] }
   | { type: "three-words"; words: string[] }
   | { type: "section-title"; text: string }
@@ -32,6 +34,24 @@ export function buildSequence(data: EndRollData): Sequence[] {
   if (infoLines.length > 0) seq.push({ type: "info", lines: infoLines });
 
   if (data.profile.motto) seq.push({ type: "motto", text: data.profile.motto });
+
+  // Career
+  const career = (data.profile.career || []).filter((e) => e.year || e.text);
+  if (career.length > 0) {
+    seq.push({ type: "timeline", label: "経 歴", entries: career.map((e) => ({ year: e.year, text: e.text })) });
+  }
+
+  // Milestones
+  const milestones = (data.profile.milestones || []).filter((e) => e.year || e.text);
+  if (milestones.length > 0) {
+    seq.push({ type: "timeline", label: "人生の転機", entries: milestones.map((e) => ({ year: e.year, text: e.text })) });
+  }
+
+  // Hobbies
+  const hobbies = (data.profile.hobbies || []).filter((h) => h.trim() !== "");
+  if (hobbies.length > 0) {
+    seq.push({ type: "hobbies", items: hobbies });
+  }
 
   const favItems: { label: string; value: string }[] = [];
   if (data.profile.favorites.music) favItems.push({ label: "音楽", value: data.profile.favorites.music });
@@ -148,6 +168,79 @@ export function buildRenderItems(
             ctx.textAlign = "center";
             ctx.globalAlpha = 0.8;
             ctx.fillText(`"${text}"`, W / 2, startY + h / 2);
+            ctx.restore();
+          },
+        });
+        y += h;
+        break;
+      }
+      case "timeline": {
+        const entries = item.entries;
+        const label = item.label;
+        const lineH = 52 * scale;
+        const h = lineH * entries.length + 100 * scale;
+        const startY = y;
+        items.push({
+          y: startY, height: h,
+          render: (ctx) => {
+            ctx.save();
+            // Section label
+            ctx.font = `${16 * scale}px 'Noto Serif JP', serif`;
+            ctx.fillStyle = "#ddd8c8";
+            ctx.textAlign = "center";
+            ctx.globalAlpha = 0.5;
+            ctx.fillText(label, W / 2, startY + 50 * scale);
+            // Entries
+            entries.forEach((e, i) => {
+              const ey = startY + 90 * scale + lineH * i;
+              // Year
+              ctx.font = `${13 * scale}px 'Noto Serif JP', serif`;
+              ctx.globalAlpha = 0.4;
+              ctx.textAlign = "right";
+              ctx.fillText(e.year, W * 0.35, ey);
+              // Dot
+              ctx.globalAlpha = 0.25;
+              ctx.beginPath();
+              ctx.arc(W * 0.38, ey - 4 * scale, 3 * scale, 0, Math.PI * 2);
+              ctx.fill();
+              // Text
+              ctx.font = `${16 * scale}px 'Noto Serif JP', serif`;
+              ctx.globalAlpha = 0.85;
+              ctx.textAlign = "left";
+              ctx.fillText(e.text, W * 0.42, ey);
+            });
+            // Vertical line
+            if (entries.length > 1) {
+              ctx.strokeStyle = "#ddd8c8";
+              ctx.globalAlpha = 0.12;
+              ctx.lineWidth = 1;
+              ctx.beginPath();
+              ctx.moveTo(W * 0.38, startY + 86 * scale);
+              ctx.lineTo(W * 0.38, startY + 86 * scale + lineH * (entries.length - 1));
+              ctx.stroke();
+            }
+            ctx.restore();
+          },
+        });
+        y += h;
+        break;
+      }
+      case "hobbies": {
+        const hobbyItems = item.items;
+        const h = H * 0.4;
+        const startY = y;
+        items.push({
+          y: startY, height: h,
+          render: (ctx) => {
+            ctx.save();
+            ctx.font = `${14 * scale}px 'Noto Serif JP', serif`;
+            ctx.fillStyle = "#ddd8c8";
+            ctx.textAlign = "center";
+            ctx.globalAlpha = 0.4;
+            ctx.fillText("趣味・特技", W / 2, startY + h * 0.3);
+            ctx.font = `${18 * scale}px 'Noto Serif JP', serif`;
+            ctx.globalAlpha = 0.85;
+            ctx.fillText(hobbyItems.join("  /  "), W / 2, startY + h * 0.55);
             ctx.restore();
           },
         });

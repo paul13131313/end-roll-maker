@@ -33,6 +33,12 @@ function minify(data: EndRollData): object {
   if (p.birthDate) profile.bd = p.birthDate;
   if (p.birthPlace) profile.bp = p.birthPlace;
   if (p.motto) profile.mt = p.motto;
+  const cr = (p.career || []).filter((e) => e.year || e.text);
+  if (cr.length > 0) profile.cr = cr.map((e) => ({ y: e.year, t: e.text }));
+  const ms = (p.milestones || []).filter((e) => e.year || e.text);
+  if (ms.length > 0) profile.ms = ms.map((e) => ({ y: e.year, t: e.text }));
+  const hb = (p.hobbies || []).filter((h) => h);
+  if (hb.length > 0) profile.hb = hb;
   const fav: Record<string, string> = {};
   if (p.favorites.music) fav.m = p.favorites.music;
   if (p.favorites.food) fav.f = p.favorites.food;
@@ -103,6 +109,17 @@ function expand(obj: Record<string, unknown>): EndRollData | null {
         birthDate: (pRaw.bd as string) || "",
         birthPlace: (pRaw.bp as string) || "",
         motto: (pRaw.mt as string) || "",
+        career: ((pRaw.cr || []) as Array<{ y: string; t: string }>).map((e) => ({
+          id: Math.random().toString(36).slice(2, 10),
+          year: e.y || "",
+          text: e.t || "",
+        })),
+        milestones: ((pRaw.ms || []) as Array<{ y: string; t: string }>).map((e) => ({
+          id: Math.random().toString(36).slice(2, 10),
+          year: e.y || "",
+          text: e.t || "",
+        })),
+        hobbies: ((pRaw.hb || []) as string[]),
         favorites: {
           music: fvRaw.m || "",
           food: fvRaw.f || "",
