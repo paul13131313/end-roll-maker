@@ -339,12 +339,12 @@ export function buildRenderItems(
             ctx.font = `${14 * scale}px 'Noto Serif JP', serif`;
             ctx.fillStyle = "#ddd8c8";
             ctx.globalAlpha = 0.5;
-            ctx.textAlign = "left";
-            ctx.fillText(relation, W * 0.2, startY + 30 * scale);
+            ctx.textAlign = "right";
+            ctx.fillText(relation, W * 0.45, startY + 30 * scale);
             ctx.font = `${18 * scale}px 'Noto Serif JP', serif`;
             ctx.globalAlpha = 1;
-            ctx.textAlign = "right";
-            ctx.fillText(name, W * 0.8, startY + 30 * scale);
+            ctx.textAlign = "left";
+            ctx.fillText(name, W * 0.55, startY + 30 * scale);
             if (message) {
               ctx.font = `italic ${12 * scale}px 'Noto Serif JP', serif`;
               ctx.globalAlpha = 0.4;
