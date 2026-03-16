@@ -1,0 +1,571 @@
+"use client";
+
+import { useEffect, useRef, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { EndRollData, CastSection } from "@/lib/types";
+import { loadData } from "@/lib/storage";
+
+type Sequence =
+  | { type: "fade-in" }
+  | { type: "title"; text: string }
+  | { type: "info"; lines: string[] }
+  | { type: "motto"; text: string }
+  | { type: "photo"; src: string }
+  | { type: "section-title"; text: string }
+  | { type: "credit"; name: string; relation: string; message: string }
+  | { type: "lead-label" }
+  | { type: "lead-name"; text: string }
+  | { type: "gratitude"; text: string }
+  | { type: "fin" }
+  | { type: "fade-out" };
+
+function buildSequence(data: EndRollData): Sequence[] {
+  const seq: Sequence[] = [];
+
+  seq.push({ type: "fade-in" });
+  seq.push({ type: "title", text: `${data.profile.fullName || "名前未設定"} の人生` });
+
+  const infoLines: string[] = [];
+  if (data.profile.birthPlace) infoLines.push(data.profile.birthPlace);
+  if (data.profile.birthDate) {
+    const d = new Date(data.profile.birthDate);
+    infoLines.push(
+      `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 生まれ`
+    );
+  }
+  if (infoLines.length > 0) seq.push({ type: "info", lines: infoLines });
+
+  if (data.profile.motto) seq.push({ type: "motto", text: data.profile.motto });
+
+  // Photos
+  if (data.settings.showPhotos && data.profile.photos.length > 0) {
+    data.profile.photos.forEach((src) => {
+      seq.push({ type: "photo", src });
+    });
+  }
+
+  // Cast sections (except lead)
+  const nonLead = data.cast.filter((s) => s.id !== "lead" && s.members.length > 0);
+  nonLead.forEach((section) => {
+    seq.push({ type: "section-title", text: section.label });
+    section.members.forEach((m) => {
+      seq.push({ type: "credit", name: m.name, relation: m.relation, message: m.message });
+    });
+  });
+
+  // Lead
+  const lead = data.cast.find((s) => s.id === "lead");
+  if (lead && lead.members.length > 0) {
+    seq.push({ type: "lead-label" });
+    lead.members.forEach((m) => {
+      seq.push({ type: "lead-name", text: m.name });
+    });
+  } else if (data.profile.fullName) {
+    seq.push({ type: "lead-label" });
+    seq.push({ type: "lead-name", text: data.profile.fullName });
+  }
+
+  if (data.profile.gratitudeMessage) {
+    seq.push({ type: "gratitude", text: data.profile.gratitudeMessage });
+  }
+
+  seq.push({ type: "fin" });
+  seq.push({ type: "fade-out" });
+
+  return seq;
+}
+
+const SPEED_MAP = { slow: 0.4, normal: 0.7, fast: 1.2 };
+const TEXT_COLOR = "#ddd8c8";
+const FONT_FAMILY = "'Noto Serif JP', serif";
+
+export default function PreviewPage() {
+  const router = useRouter();
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [data, setData] = useState<EndRollData | null>(null);
+  const rafRef = useRef<number>(0);
+  const loadedImagesRef = useRef<Map<string, HTMLImageElement>>(new Map());
+
+  useEffect(() => {
+    const d = loadData();
+    setData(d);
+
+    // Preload photos
+    if (d.settings.showPhotos && d.profile.photos.length > 0) {
+      d.profile.photos.forEach((src) => {
+        const img = new Image();
+        img.src = src;
+        img.onload = () => {
+          loadedImagesRef.current.set(src, img);
+        };
+      });
+    }
+  }, []);
+
+  const resizeCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    const container = containerRef.current;
+    if (!canvas || !container || !data) return;
+
+    const isVertical = data.settings.aspect === "9:16";
+    const containerW = container.clientWidth;
+    const containerH = container.clientHeight;
+
+    let w: number, h: number;
+    if (isVertical) {
+      const ratio = 9 / 16;
+      h = containerH;
+      w = h * ratio;
+      if (w > containerW) {
+        w = containerW;
+        h = w / ratio;
+      }
+    } else {
+      const ratio = 16 / 9;
+      w = containerW;
+      h = w / ratio;
+      if (h > containerH) {
+        h = containerH;
+        w = h * ratio;
+      }
+    }
+
+    canvas.width = w * 2;
+    canvas.height = h * 2;
+    canvas.style.width = `${w}px`;
+    canvas.style.height = `${h}px`;
+  }, [data]);
+
+  useEffect(() => {
+    resizeCanvas();
+    window.addEventListener("resize", resizeCanvas);
+    return () => window.removeEventListener("resize", resizeCanvas);
+  }, [resizeCanvas]);
+
+  const play = useCallback(() => {
+    if (!data || !canvasRef.current) return;
+
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    setPlaying(true);
+
+    const sequence = buildSequence(data);
+    const speed = SPEED_MAP[data.settings.speed];
+    const W = canvas.width;
+    const H = canvas.height;
+    const scale = W / 800; // base design at 800px
+
+    // Calculate total scroll content height
+    let totalHeight = H; // start below screen
+
+    interface RenderItem {
+      y: number;
+      render: (ctx: CanvasRenderingContext2D, alpha: number) => void;
+      height: number;
+    }
+
+    const items: RenderItem[] = [];
+    let cursorY = H; // start one screen below
+
+    for (const item of sequence) {
+      switch (item.type) {
+        case "fade-in": {
+          items.push({
+            y: cursorY,
+            height: H * 0.5,
+            render: () => {},
+          });
+          cursorY += H * 0.5;
+          break;
+        }
+        case "title": {
+          const h = H * 0.6;
+          items.push({
+            y: cursorY,
+            height: h,
+            render: (ctx) => {
+              ctx.save();
+              ctx.font = `${32 * scale}px ${FONT_FAMILY}`;
+              ctx.fillStyle = TEXT_COLOR;
+              ctx.textAlign = "center";
+              ctx.fillText(item.text, W / 2, cursorY + h / 2);
+              ctx.restore();
+            },
+          });
+          cursorY += h;
+          break;
+        }
+        case "info": {
+          const lineH = 36 * scale;
+          const h = lineH * item.lines.length + 80 * scale;
+          items.push({
+            y: cursorY,
+            height: h,
+            render: (ctx) => {
+              ctx.save();
+              ctx.font = `${16 * scale}px ${FONT_FAMILY}`;
+              ctx.fillStyle = TEXT_COLOR;
+              ctx.textAlign = "center";
+              ctx.globalAlpha = 0.7;
+              item.lines.forEach((line, i) => {
+                ctx.fillText(line, W / 2, cursorY + 40 * scale + lineH * (i + 1));
+              });
+              ctx.restore();
+            },
+          });
+          cursorY += h;
+          break;
+        }
+        case "motto": {
+          const h = H * 0.5;
+          items.push({
+            y: cursorY,
+            height: h,
+            render: (ctx) => {
+              ctx.save();
+              ctx.font = `italic ${20 * scale}px ${FONT_FAMILY}`;
+              ctx.fillStyle = TEXT_COLOR;
+              ctx.textAlign = "center";
+              ctx.globalAlpha = 0.8;
+              ctx.fillText(`"${item.text}"`, W / 2, cursorY + h / 2);
+              ctx.restore();
+            },
+          });
+          cursorY += h;
+          break;
+        }
+        case "photo": {
+          const h = H * 0.7;
+          const src = item.src;
+          items.push({
+            y: cursorY,
+            height: h,
+            render: (ctx) => {
+              const img = loadedImagesRef.current.get(src);
+              if (!img) return;
+              ctx.save();
+              const maxW = W * 0.6;
+              const maxH = h * 0.8;
+              let dw = img.naturalWidth;
+              let dh = img.naturalHeight;
+              const ratio = Math.min(maxW / dw, maxH / dh);
+              dw *= ratio;
+              dh *= ratio;
+              ctx.drawImage(img, (W - dw) / 2, cursorY + (h - dh) / 2, dw, dh);
+              ctx.restore();
+            },
+          });
+          cursorY += h;
+          break;
+        }
+        case "section-title": {
+          const h = 120 * scale;
+          items.push({
+            y: cursorY,
+            height: h,
+            render: (ctx) => {
+              ctx.save();
+              ctx.font = `${22 * scale}px ${FONT_FAMILY}`;
+              ctx.fillStyle = TEXT_COLOR;
+              ctx.textAlign = "center";
+              ctx.fillText(item.text, W / 2, cursorY + h * 0.65);
+              // underline
+              const tw = ctx.measureText(item.text).width;
+              ctx.strokeStyle = TEXT_COLOR;
+              ctx.globalAlpha = 0.3;
+              ctx.lineWidth = 1;
+              ctx.beginPath();
+              ctx.moveTo(W / 2 - tw / 2, cursorY + h * 0.65 + 10 * scale);
+              ctx.lineTo(W / 2 + tw / 2, cursorY + h * 0.65 + 10 * scale);
+              ctx.stroke();
+              ctx.restore();
+            },
+          });
+          cursorY += h;
+          break;
+        }
+        case "credit": {
+          const h = item.message ? 80 * scale : 56 * scale;
+          items.push({
+            y: cursorY,
+            height: h,
+            render: (ctx) => {
+              ctx.save();
+              // Relation on left
+              ctx.font = `${14 * scale}px ${FONT_FAMILY}`;
+              ctx.fillStyle = TEXT_COLOR;
+              ctx.globalAlpha = 0.5;
+              ctx.textAlign = "left";
+              ctx.fillText(item.relation, W * 0.2, cursorY + 30 * scale);
+              // Name on right
+              ctx.font = `${18 * scale}px ${FONT_FAMILY}`;
+              ctx.globalAlpha = 1;
+              ctx.textAlign = "right";
+              ctx.fillText(item.name, W * 0.8, cursorY + 30 * scale);
+              // Message
+              if (item.message) {
+                ctx.font = `italic ${12 * scale}px ${FONT_FAMILY}`;
+                ctx.globalAlpha = 0.4;
+                ctx.textAlign = "center";
+                ctx.fillText(item.message, W / 2, cursorY + 56 * scale);
+              }
+              ctx.restore();
+            },
+          });
+          cursorY += h;
+          break;
+        }
+        case "lead-label": {
+          const h = 160 * scale;
+          items.push({
+            y: cursorY,
+            height: h,
+            render: (ctx) => {
+              ctx.save();
+              ctx.font = `${18 * scale}px ${FONT_FAMILY}`;
+              ctx.fillStyle = TEXT_COLOR;
+              ctx.textAlign = "center";
+              ctx.globalAlpha = 0.7;
+              ctx.fillText("主 演", W / 2, cursorY + h * 0.65);
+              ctx.restore();
+            },
+          });
+          cursorY += h;
+          break;
+        }
+        case "lead-name": {
+          const h = 200 * scale;
+          items.push({
+            y: cursorY,
+            height: h,
+            render: (ctx) => {
+              ctx.save();
+              ctx.font = `bold ${42 * scale}px ${FONT_FAMILY}`;
+              ctx.fillStyle = TEXT_COLOR;
+              ctx.textAlign = "center";
+              ctx.fillText(item.text, W / 2, cursorY + h / 2);
+              ctx.restore();
+            },
+          });
+          cursorY += h;
+          break;
+        }
+        case "gratitude": {
+          const lines = item.text.split("\n");
+          const lineH = 32 * scale;
+          const h = lineH * lines.length + 200 * scale;
+          items.push({
+            y: cursorY,
+            height: h,
+            render: (ctx) => {
+              ctx.save();
+              ctx.font = `${16 * scale}px ${FONT_FAMILY}`;
+              ctx.fillStyle = TEXT_COLOR;
+              ctx.textAlign = "center";
+              ctx.globalAlpha = 0.8;
+              lines.forEach((line, i) => {
+                ctx.fillText(line, W / 2, cursorY + 100 * scale + lineH * i);
+              });
+              ctx.restore();
+            },
+          });
+          cursorY += h;
+          break;
+        }
+        case "fin": {
+          const h = H * 0.8;
+          items.push({
+            y: cursorY,
+            height: h,
+            render: (ctx) => {
+              ctx.save();
+              ctx.font = `italic ${36 * scale}px 'IM Fell English','Playfair Display',serif`;
+              ctx.fillStyle = TEXT_COLOR;
+              ctx.textAlign = "center";
+              ctx.fillText("FIN", W / 2, cursorY + h / 2);
+              ctx.restore();
+            },
+          });
+          cursorY += h;
+          break;
+        }
+        case "fade-out": {
+          items.push({
+            y: cursorY,
+            height: H,
+            render: () => {},
+          });
+          cursorY += H;
+          break;
+        }
+      }
+    }
+
+    totalHeight = cursorY;
+
+    let scrollY = 0;
+    let lastTime = performance.now();
+
+    const render = (now: number) => {
+      const dt = (now - lastTime) / 1000;
+      lastTime = now;
+
+      scrollY += speed * 60 * dt * scale;
+
+      ctx.clearRect(0, 0, W, H);
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, W, H);
+
+      // Fade in at start
+      if (scrollY < H * 0.3) {
+        const progress = scrollY / (H * 0.3);
+        ctx.globalAlpha = progress;
+      } else {
+        ctx.globalAlpha = 1;
+      }
+
+      // Fade out at end
+      const distFromEnd = totalHeight - H - scrollY;
+      if (distFromEnd < H * 0.5 && distFromEnd > 0) {
+        ctx.globalAlpha = distFromEnd / (H * 0.5);
+      }
+
+      // Render visible items
+      for (const item of items) {
+        const screenY = item.y - scrollY;
+        if (screenY + item.height < -100 || screenY > H + 100) continue;
+
+        ctx.save();
+        ctx.translate(0, -scrollY);
+        item.render(ctx, 1);
+        ctx.restore();
+      }
+
+      // Reset alpha
+      ctx.globalAlpha = 1;
+
+      if (scrollY < totalHeight - H) {
+        rafRef.current = requestAnimationFrame(render);
+      } else {
+        // Final black
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0, 0, W, H);
+        setPlaying(false);
+      }
+    };
+
+    rafRef.current = requestAnimationFrame(render);
+  }, [data]);
+
+  const stop = () => {
+    cancelAnimationFrame(rafRef.current);
+    setPlaying(false);
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+    }
+  };
+
+  if (!data) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-black">
+        <div style={{ color: "#555", fontFamily: "'Courier New',monospace", fontSize: 12, letterSpacing: "0.3em" }}>
+          LOADING...
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        width: "100%",
+        height: "100vh",
+        background: "#000",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        position: "relative",
+      }}
+    >
+      {/* Controls */}
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 20,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          padding: "16px 24px",
+          background: "linear-gradient(to bottom, rgba(0,0,0,0.8), transparent)",
+        }}
+      >
+        <button
+          onClick={() => {
+            stop();
+            router.push("/edit");
+          }}
+          style={{
+            fontFamily: "'Courier New',monospace",
+            fontSize: 11,
+            letterSpacing: "0.15em",
+            color: "#888",
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+          }}
+        >
+          ← EDIT
+        </button>
+        <button
+          onClick={playing ? stop : play}
+          style={{
+            fontFamily: "'Courier New',monospace",
+            fontSize: 11,
+            letterSpacing: "0.3em",
+            color: "#ddd8c8",
+            background: "none",
+            border: "1px solid rgba(200,190,170,0.3)",
+            padding: "8px 24px",
+            cursor: "pointer",
+          }}
+        >
+          {playing ? "STOP" : "PLAY"}
+        </button>
+      </div>
+
+      {/* Canvas container */}
+      <div
+        ref={containerRef}
+        style={{
+          width: "90%",
+          height: "80vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <canvas
+          ref={canvasRef}
+          style={{
+            background: "#000",
+            boxShadow: "0 0 60px rgba(20,30,60,0.3)",
+          }}
+        />
+      </div>
+    </div>
+  );
+}

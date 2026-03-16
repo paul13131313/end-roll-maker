@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+:root {
+  --background: #000000;
+  --foreground: #ddd8c8;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: "Noto Serif JP", serif;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #111;
+}
+::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 3px;
+}
+
+/* Input styles */
+input, textarea, select {
+  background: #111 !important;
+  border: 1px solid #333 !important;
+  color: #ddd8c8 !important;
+  border-radius: 6px !important;
+  padding: 10px 14px !important;
+  font-family: "Noto Serif JP", serif !important;
+  font-size: 14px !important;
+  outline: none !important;
+  transition: border-color 0.2s !important;
+}
+
+input:focus, textarea:focus, select:focus {
+  border-color: #666 !important;
+}
+
+input::placeholder, textarea::placeholder {
+  color: #555 !important;
+}
