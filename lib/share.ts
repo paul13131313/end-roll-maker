@@ -1,4 +1,5 @@
 import { EndRollData } from "./types";
+import pako from "pako";
 
 // URL-safe base64
 function toUrlSafe(b64: string): string {
@@ -145,9 +146,10 @@ function expand(obj: Record<string, unknown>): EndRollData | null {
 export function encodeData(data: EndRollData): string {
   const mini = minify(data);
   const json = JSON.stringify(mini);
-  const bytes = new TextEncoder().encode(json);
+  const utf8 = new TextEncoder().encode(json);
+  const compressed = pako.deflate(utf8);
   let binary = "";
-  bytes.forEach((b) => (binary += String.fromCharCode(b)));
+  compressed.forEach((b) => (binary += String.fromCharCode(b)));
   return toUrlSafe(btoa(binary));
 }
 
@@ -159,10 +161,10 @@ export function decodeData(encoded: string): EndRollData | null {
     for (let i = 0; i < binary.length; i++) {
       bytes[i] = binary.charCodeAt(i);
     }
-    const json = new TextDecoder().decode(bytes);
+    const decompressed = pako.inflate(bytes);
+    const json = new TextDecoder().decode(decompressed);
     const obj = JSON.parse(json);
 
-    // Check if it's minified format (has "c" key) or full format (has "cast" key)
     if (obj.cast) {
       return obj as EndRollData;
     }
