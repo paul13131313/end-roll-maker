@@ -1,27 +1,37 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { Suspense } from "react";
 import { EndRollData } from "@/lib/types";
-import { loadData } from "@/lib/storage";
 import { startBGM, stopBGM } from "@/lib/bgm";
 import { buildSequence, buildRenderItems, SPEED_MAP } from "@/lib/renderer";
-import { encodeData } from "@/lib/share";
+import { decodeData } from "@/lib/share";
 
-export default function PreviewPage() {
-  const router = useRouter();
+function ViewContent() {
+  const searchParams = useSearchParams();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [playing, setPlaying] = useState(false);
   const [data, setData] = useState<EndRollData | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState(false);
   const rafRef = useRef<number>(0);
   const scrollYRef = useRef(0);
   const stoppedRef = useRef(false);
 
   useEffect(() => {
-    setData(loadData());
-  }, []);
+    const encoded = searchParams.get("d");
+    if (!encoded) {
+      setError(true);
+      return;
+    }
+    const decoded = decodeData(encoded);
+    if (!decoded) {
+      setError(true);
+      return;
+    }
+    setData(decoded);
+  }, [searchParams]);
 
   const sizeCanvas = useCallback(() => {
     const canvas = canvasRef.current;
@@ -84,7 +94,6 @@ export default function PreviewPage() {
       const H = canvas.height;
       const scale = W / 800;
 
-      // Rebuild items each frame to handle resize
       const { items, totalHeight } = buildRenderItems(sequence, W, H, scale);
 
       scrollYRef.current += speed * 60 * dt * scale;
@@ -145,14 +154,21 @@ export default function PreviewPage() {
     }
   };
 
-  const share = async () => {
-    if (!data) return;
-    const encoded = encodeData(data);
-    const url = `${window.location.origin}/view?d=${encoded}`;
-    await navigator.clipboard.writeText(url);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
+  if (error) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-black gap-6">
+        <div style={{ color: "#666", fontFamily: "'Courier New',monospace", fontSize: 12, letterSpacing: "0.3em" }}>
+          INVALID OR MISSING DATA
+        </div>
+        <a
+          href="/"
+          style={{ fontFamily: "'Courier New',monospace", fontSize: 11, letterSpacing: "0.3em", color: "#ddd8c8", textDecoration: "none", border: "1px solid rgba(200,190,170,0.3)", padding: "8px 24px" }}
+        >
+          CREATE YOUR OWN
+        </a>
+      </div>
+    );
+  }
 
   if (!data) {
     return (
@@ -191,26 +207,18 @@ export default function PreviewPage() {
           background: "linear-gradient(to bottom, rgba(0,0,0,0.8), transparent)",
         }}
       >
-        <button
-          onClick={() => { stop(); router.push("/edit"); }}
-          style={{ fontFamily: "'Courier New',monospace", fontSize: 11, letterSpacing: "0.15em", color: "#888", background: "none", border: "none", cursor: "pointer" }}
+        <a
+          href="/"
+          style={{ fontFamily: "'IM Fell English','Playfair Display',serif", fontStyle: "italic", fontSize: 14, color: "#888", textDecoration: "none", letterSpacing: "0.08em" }}
         >
-          ← EDIT
+          end roll maker
+        </a>
+        <button
+          onClick={playing ? stop : play}
+          style={{ fontFamily: "'Courier New',monospace", fontSize: 11, letterSpacing: "0.3em", color: "#ddd8c8", background: "none", border: "1px solid rgba(200,190,170,0.3)", padding: "8px 24px", cursor: "pointer" }}
+        >
+          {playing ? "STOP" : "PLAY"}
         </button>
-        <div style={{ display: "flex", gap: 12 }}>
-          <button
-            onClick={share}
-            style={{ fontFamily: "'Courier New',monospace", fontSize: 11, letterSpacing: "0.2em", color: copied ? "#8f8" : "#888", background: "none", border: "1px solid rgba(200,190,170,0.2)", padding: "8px 16px", cursor: "pointer", transition: "all 0.3s" }}
-          >
-            {copied ? "COPIED!" : "SHARE"}
-          </button>
-          <button
-            onClick={playing ? stop : play}
-            style={{ fontFamily: "'Courier New',monospace", fontSize: 11, letterSpacing: "0.3em", color: "#ddd8c8", background: "none", border: "1px solid rgba(200,190,170,0.3)", padding: "8px 24px", cursor: "pointer" }}
-          >
-            {playing ? "STOP" : "PLAY"}
-          </button>
-        </div>
       </div>
 
       <div
@@ -223,5 +231,21 @@ export default function PreviewPage() {
         />
       </div>
     </div>
+  );
+}
+
+export default function ViewPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-black">
+          <div style={{ color: "#555", fontFamily: "'Courier New',monospace", fontSize: 12, letterSpacing: "0.3em" }}>
+            LOADING...
+          </div>
+        </div>
+      }
+    >
+      <ViewContent />
+    </Suspense>
   );
 }

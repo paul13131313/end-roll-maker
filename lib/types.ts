@@ -23,13 +23,11 @@ export interface ProfileData {
     place: string;
   };
   threeWords: [string, string, string];
-  photos: string[]; // base64 data URLs
   gratitudeMessage: string;
 }
 
 export interface SettingsData {
   aspect: "16:9" | "9:16";
-  showPhotos: boolean;
   speed: "slow" | "normal" | "fast";
 }
 
@@ -57,12 +55,10 @@ export const DEFAULT_PROFILE: ProfileData = {
   motto: "",
   favorites: { music: "", food: "", place: "" },
   threeWords: ["", "", ""],
-  photos: [],
   gratitudeMessage: "",
 };
 
 export const DEFAULT_SETTINGS: SettingsData = {
   aspect: "16:9",
-  showPhotos: true,
   speed: "normal",
 };
