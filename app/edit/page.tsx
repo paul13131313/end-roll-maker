@@ -14,6 +14,7 @@ import {
 } from "@/lib/types";
 import { loadData, saveData } from "@/lib/storage";
 
+
 function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
@@ -103,21 +104,30 @@ export default function EditPage() {
     const files = e.target.files;
     if (!files) return;
 
-    const remaining = 10 - profile.photos.length;
-    const toProcess = Array.from(files).slice(0, remaining);
+    const fileArray = Array.from(files);
 
-    toProcess.forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result as string;
-        setProfile((prev) => {
-          const next = { ...prev, photos: [...prev.photos, result] };
-          persist(cast, next, settings);
-          return next;
-        });
-      };
-      reader.readAsDataURL(file);
+    // Read all files first, then batch update
+    Promise.all(
+      fileArray.map(
+        (file) =>
+          new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.readAsDataURL(file);
+          })
+      )
+    ).then((results) => {
+      setProfile((prev) => {
+        const remaining = 10 - prev.photos.length;
+        const toAdd = results.slice(0, remaining);
+        const next = { ...prev, photos: [...prev.photos, ...toAdd] };
+        saveData({ cast, profile: next, settings });
+        return next;
+      });
     });
+
+    // Reset input so same file can be selected again
+    e.target.value = "";
   };
 
   const removePhoto = (index: number) => {

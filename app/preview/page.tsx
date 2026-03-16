@@ -4,12 +4,15 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { EndRollData } from "@/lib/types";
 import { loadData } from "@/lib/storage";
+import { startBGM, stopBGM } from "@/lib/bgm";
 
 type Sequence =
   | { type: "fade-in" }
   | { type: "title"; text: string }
   | { type: "info"; lines: string[] }
   | { type: "motto"; text: string }
+  | { type: "favorites"; items: { label: string; value: string }[] }
+  | { type: "three-words"; words: string[] }
   | { type: "photo"; src: string }
   | { type: "section-title"; text: string }
   | { type: "credit"; name: string; relation: string; message: string }
@@ -36,6 +39,17 @@ function buildSequence(data: EndRollData): Sequence[] {
   if (infoLines.length > 0) seq.push({ type: "info", lines: infoLines });
 
   if (data.profile.motto) seq.push({ type: "motto", text: data.profile.motto });
+
+  // Favorites
+  const favItems: { label: string; value: string }[] = [];
+  if (data.profile.favorites.music) favItems.push({ label: "音楽", value: data.profile.favorites.music });
+  if (data.profile.favorites.food) favItems.push({ label: "食", value: data.profile.favorites.food });
+  if (data.profile.favorites.place) favItems.push({ label: "場所", value: data.profile.favorites.place });
+  if (favItems.length > 0) seq.push({ type: "favorites", items: favItems });
+
+  // Three words
+  const words = data.profile.threeWords.filter((w) => w.trim() !== "");
+  if (words.length > 0) seq.push({ type: "three-words", words });
 
   if (data.settings.showPhotos && data.profile.photos.length > 0) {
     data.profile.photos.forEach((src) => {
@@ -153,6 +167,65 @@ function buildRenderItems(
             ctx.textAlign = "center";
             ctx.globalAlpha = 0.8;
             ctx.fillText(`"${text}"`, W / 2, startY + h / 2);
+            ctx.restore();
+          },
+        });
+        y += h;
+        break;
+      }
+      case "favorites": {
+        const favItems = item.items;
+        const lineH = 40 * scale;
+        const h = lineH * favItems.length + 120 * scale;
+        const startY = y;
+        items.push({
+          y: startY,
+          height: h,
+          render: (ctx) => {
+            ctx.save();
+            // Section label
+            ctx.font = `${14 * scale}px 'Noto Serif JP', serif`;
+            ctx.fillStyle = "#ddd8c8";
+            ctx.textAlign = "center";
+            ctx.globalAlpha = 0.4;
+            ctx.fillText("好きだったもの", W / 2, startY + 50 * scale);
+            // Items
+            ctx.globalAlpha = 0.8;
+            favItems.forEach((fi, i) => {
+              const iy = startY + 90 * scale + lineH * i;
+              ctx.font = `${13 * scale}px 'Noto Serif JP', serif`;
+              ctx.globalAlpha = 0.45;
+              ctx.textAlign = "right";
+              ctx.fillText(fi.label, W / 2 - 16 * scale, iy);
+              ctx.font = `${17 * scale}px 'Noto Serif JP', serif`;
+              ctx.globalAlpha = 0.85;
+              ctx.textAlign = "left";
+              ctx.fillText(fi.value, W / 2 + 16 * scale, iy);
+            });
+            ctx.restore();
+          },
+        });
+        y += h;
+        break;
+      }
+      case "three-words": {
+        const words = item.words;
+        const h = H * 0.45;
+        const startY = y;
+        items.push({
+          y: startY,
+          height: h,
+          render: (ctx) => {
+            ctx.save();
+            ctx.font = `${14 * scale}px 'Noto Serif JP', serif`;
+            ctx.fillStyle = "#ddd8c8";
+            ctx.textAlign = "center";
+            ctx.globalAlpha = 0.4;
+            ctx.fillText("自分を表す言葉", W / 2, startY + h * 0.3);
+            ctx.font = `${22 * scale}px 'Noto Serif JP', serif`;
+            ctx.globalAlpha = 0.9;
+            const joined = words.join("  ·  ");
+            ctx.fillText(joined, W / 2, startY + h * 0.55);
             ctx.restore();
           },
         });
@@ -411,6 +484,7 @@ export default function PreviewPage() {
     resizeCanvas();
 
     setPlaying(true);
+    startBGM();
 
     const sequence = buildSequence(data);
     const speed = SPEED_MAP[data.settings.speed];
@@ -467,6 +541,7 @@ export default function PreviewPage() {
         ctx.fillStyle = "#000";
         ctx.fillRect(0, 0, W, H);
         setPlaying(false);
+        stopBGM();
       }
     };
 
@@ -476,6 +551,7 @@ export default function PreviewPage() {
   const stop = () => {
     cancelAnimationFrame(rafRef.current);
     setPlaying(false);
+    stopBGM();
     const canvas = canvasRef.current;
     if (canvas) {
       const ctx = canvas.getContext("2d");
