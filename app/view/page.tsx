@@ -6,7 +6,7 @@ import { Suspense } from "react";
 import { EndRollData } from "@/lib/types";
 import { startBGM, stopBGM } from "@/lib/bgm";
 import { buildSequence, buildRenderItems, SPEED_MAP } from "@/lib/renderer";
-import { decodeData } from "@/lib/share";
+import { decodeData, expandShared } from "@/lib/share";
 
 function ViewContent() {
   const searchParams = useSearchParams();
@@ -20,6 +20,24 @@ function ViewContent() {
   const stoppedRef = useRef(false);
 
   useEffect(() => {
+    // 新方式: ?id= で短いIDから取得
+    const id = searchParams.get("id");
+    if (id) {
+      fetch(`/api/share?id=${encodeURIComponent(id)}`)
+        .then((res) => {
+          if (!res.ok) throw new Error("Not found");
+          return res.json();
+        })
+        .then((obj) => {
+          const expanded = expandShared(obj);
+          if (!expanded) throw new Error("Invalid data");
+          setData(expanded);
+        })
+        .catch(() => setError(true));
+      return;
+    }
+
+    // 旧方式: ?d= で直接デコード（後方互換）
     const encoded = searchParams.get("d");
     if (!encoded) {
       setError(true);

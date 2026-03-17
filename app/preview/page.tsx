@@ -6,7 +6,7 @@ import { EndRollData } from "@/lib/types";
 import { loadData } from "@/lib/storage";
 import { startBGM, stopBGM } from "@/lib/bgm";
 import { buildSequence, buildRenderItems, SPEED_MAP } from "@/lib/renderer";
-import { encodeData } from "@/lib/share";
+import { encodeData, minifyData } from "@/lib/share";
 
 export default function PreviewPage() {
   const router = useRouter();
@@ -147,9 +147,22 @@ export default function PreviewPage() {
 
   const share = async () => {
     if (!data) return;
-    const encoded = encodeData(data);
-    const url = `${window.location.origin}/view?d=${encoded}`;
-    await navigator.clipboard.writeText(url);
+    try {
+      const res = await fetch("/api/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(minifyData(data)),
+      });
+      if (!res.ok) throw new Error("Save failed");
+      const { id } = await res.json();
+      const url = `${window.location.origin}/view?id=${id}`;
+      await navigator.clipboard.writeText(url);
+    } catch {
+      // フォールバック: 従来の長いURL方式
+      const encoded = encodeData(data);
+      const url = `${window.location.origin}/view?d=${encoded}`;
+      await navigator.clipboard.writeText(url);
+    }
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };

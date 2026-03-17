@@ -143,6 +143,17 @@ function expand(obj: Record<string, unknown>): EndRollData | null {
   }
 }
 
+export function minifyData(data: EndRollData): object {
+  return minify(data);
+}
+
+export function expandShared(obj: Record<string, unknown>): EndRollData | null {
+  if (obj.cast) {
+    return obj as unknown as EndRollData;
+  }
+  return expand(obj);
+}
+
 export function encodeData(data: EndRollData): string {
   const mini = minify(data);
   const json = JSON.stringify(mini);
